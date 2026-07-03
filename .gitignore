@@ -1,0 +1,13 @@
+# 敏感金鑰 (防外流)
+.env
+
+# 氣象快取與歷史資料庫 (避免快取衝突，後端會自動動態建立或模擬)
+cwa_observation.json
+cwa_observation.db
+
+# Python 快取
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/

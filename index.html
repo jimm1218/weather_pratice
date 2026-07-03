@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Windy 風場氣象觀測動態圖</title>
+  
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+        crossorigin=""/>
+  
+  <!-- Our Custom Stylesheet -->
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+  <!-- Fullscreen Leaflet Map Container -->
+  <div id="map"></div>
+
+  <!-- Transparent Canvas Overlay for Windy Particle Animation and Interpolated Gradients -->
+  <canvas id="weather-canvas"></canvas>
+
+  <!-- Overlay UI Controls (Glassmorphism layout) -->
+  <div class="gui-wrapper">
+    
+    <!-- Header Dashboard Panel -->
+    <header class="glass-panel header-dashboard">
+      <div class="brand-section">
+        <span class="brand-logo">🌀</span>
+        <h1 class="brand-title">TAIWAN WINDY</h1>
+      </div>
+      <div class="time-status-section">
+        <div class="clock-panel" id="live-clock">--:--:--</div>
+        <div class="status-badge">
+          <span class="status-dot"></span>
+          <span id="data-status">更新時間: 讀取中...</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Left Controls Panel -->
+    <aside class="glass-panel sidebar-controls">
+      <div>
+        <div class="section-title">
+          <span>📊</span> 觀測圖層
+        </div>
+        <div class="layer-btn-group">
+          <button class="layer-btn active" data-layer="wind" id="btn-wind">
+            <span class="layer-btn-label">
+              <span class="layer-btn-icon">🍃</span>
+              <span>風向流場 (Wind Field)</span>
+            </span>
+            <span class="layer-btn-value" id="val-wind">-- m/s</span>
+          </button>
+          
+          <button class="layer-btn" data-layer="temp" id="btn-temp">
+            <span class="layer-btn-label">
+              <span class="layer-btn-icon">🌡️</span>
+              <span>分層溫度 (Temperature)</span>
+            </span>
+            <span class="layer-btn-value" id="val-temp">-- °C</span>
+          </button>
+          
+          <button class="layer-btn" data-layer="rain" id="btn-rain">
+            <span class="layer-btn-label">
+              <span class="layer-btn-icon">🌧️</span>
+              <span>雨量累積 (Precipitation)</span>
+            </span>
+            <span class="layer-btn-value" id="val-rain">-- mm</span>
+          </button>
+        </div>
+      </div>
+
+      <div>
+        <div class="section-title">
+          <span>📅</span> 時間區間
+        </div>
+        <div class="input-group" style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px;">
+          <label class="input-label" for="date-select" style="font-size: 0.75rem; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1px;">選擇日期</label>
+          <input type="date" id="date-select" class="glass-input" style="background: rgba(255, 255, 255, 0.05); border: 1px solid var(--border-glass); border-radius: 8px; padding: 8px 12px; color: var(--text-primary); font-family: var(--font-sans); font-size: 0.9rem; outline: none; transition: var(--transition);">
+        </div>
+        <div class="input-group" style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px;">
+          <label class="input-label" for="range-select" style="font-size: 0.75rem; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1px;">時間跨度</label>
+          <select id="range-select" class="glass-select" style="background: rgba(255, 255, 255, 0.05); border: 1px solid var(--border-glass); border-radius: 8px; padding: 8px 12px; color: var(--text-primary); font-family: var(--font-sans); font-size: 0.9rem; outline: none; transition: var(--transition); cursor: pointer;">
+            <option value="6" selected>過去 6 小時</option>
+            <option value="12">過去 12 小時</option>
+            <option value="24">過去 24 小時</option>
+          </select>
+        </div>
+      </div>
+
+      <div>
+        <div class="section-title">
+          <span>⚡</span> 系統操作
+        </div>
+        <button class="refresh-btn" id="btn-refresh">
+          <span class="refresh-icon">🔄</span>
+          <span>強制撈取最新觀測資料</span>
+        </button>
+      </div>
+
+      <div>
+        <div class="section-title">
+          <span>ℹ️</span> 說明
+        </div>
+        <p style="font-size: 0.85rem; line-height: 1.5; color: var(--text-secondary);">
+          本系統整合氣象署自動氣象站資料，利用 <b>IDW (反距離加權) 演算法</b> 將全台觀測站資料進行網格化插值，以「分層設色」展現溫度與雨量連續漸層；並使用<b>向量流場動畫</b>模擬即時風速與風向的流體動態。
+        </p>
+      </div>
+    </aside>
+
+    <!-- Right Station Detail Drawer -->
+    <section class="glass-panel detail-panel" id="station-detail-panel">
+      <div class="detail-header">
+        <h3 class="detail-title" id="detail-station-name">測站名稱</h3>
+        <button class="detail-close" id="btn-detail-close">✕</button>
+      </div>
+      <div class="detail-grid">
+        <div class="detail-item">
+          <div class="detail-label">溫度</div>
+          <div class="detail-val" id="detail-temp">-- °C</div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">降雨量</div>
+          <div class="detail-val" id="detail-rain">-- mm</div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">風速</div>
+          <div class="detail-val" id="detail-wind-speed">-- m/s</div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">風向</div>
+          <div class="detail-val" id="detail-wind-dir">--°</div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">相對濕度</div>
+          <div class="detail-val" id="detail-humidity">--%</div>
+        </div>
+        <div class="detail-item">
+          <div class="detail-label">氣壓</div>
+          <div class="detail-val" id="detail-pressure">-- hPa</div>
+        </div>
+      </div>
+      <div style="margin-top: 15px; font-size: 0.75rem; color: var(--text-secondary); text-align: right;" id="detail-obs-time">
+        觀測時間: --
+      </div>
+    </section>
+
+    <!-- Bottom Timeline Playback Panel -->
+    <section class="glass-panel timeline-panel" id="timeline-panel">
+      <div class="timeline-play-container">
+        <button class="play-btn" id="btn-play-pause" title="播放/暫停">▶</button>
+      </div>
+      <div class="timeline-slider-wrapper">
+        <input type="range" id="timeline-slider" min="0" max="5" value="5" step="0.01">
+        <div class="timeline-labels" id="timeline-ticks-container">
+          <!-- 時間標記將由 script.js 動態產出 -->
+        </div>
+      </div>
+      <div class="timeline-info">
+        <span class="timeline-time-label" id="timeline-current-time">時間軸載入中...</span>
+      </div>
+    </section>
+
+    <!-- Bottom Legend Panel -->
+    <footer class="glass-panel legend-panel">
+      <div class="legend-info">
+        <strong id="legend-title">風向風速 (m/s)</strong>
+      </div>
+      <div class="legend-scale-wrapper">
+        <span class="legend-label-min" id="legend-lbl-min">0</span>
+        <div class="legend-bar" id="legend-color-bar"></div>
+        <span class="legend-label-max" id="legend-lbl-max">30+</span>
+      </div>
+      <div style="font-size: 0.8rem; color: var(--text-secondary); display: flex; gap: 15px;">
+        <div>最大值: <span id="stat-max" style="color: #fff; font-weight: 700;">--</span></div>
+        <div>平均值: <span id="stat-avg" style="color: #fff; font-weight: 700;">--</span></div>
+      </div>
+    </footer>
+
+  </div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+          crossorigin=""></script>
+  
+  <!-- Custom Logic Script -->
+  <script src="/script.js"></script>
+</body>
+</html>
